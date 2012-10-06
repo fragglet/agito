@@ -592,12 +592,73 @@ def get_history_for_path(path, revision=None):
 	return construct_history(path, commit_id, log)
 
 def parse_config(filename):
+	"""Parse configuration file.
+
+	Args:
+	  filename: Path to the configuration file to parse.
+	Returns:
+	  Dictionary of values defined in the file.
+	"""
 	with open(filename) as f:
 		data = f.read()
 		compiled = compile(data, filename, "exec")
 		result = {}
 		eval(compiled, result)
 		return result
+
+def parse_svn_path(path, git_name):
+	"""Given a Subversion path to convert, expand to actual paths.
+
+	This is used in the BRANCHES and TAGS configuration dictionaries,
+	where '%' wildcards can be specified to expand all matching paths.
+
+	Args:
+	  path: The Subversion path, possibly containing a '%' as a wildcard.
+	  git_name: The name of the Git tag or branch, possibly also
+	      containing a '%' to match the Subversion path.
+	Returns:
+	  List of tuples, each tuple containing an expanded Subversion path
+	  and git name.
+	"""
+	if '%' not in path:
+		return [(path, git_name)]
+
+	svn_dir = os.path.dirname(path)
+	svn_filepattern = os.path.basename(path)
+	filename_re = re.escape(svn_filepattern).replace('\\%', '(.*)') + '$'
+	filename_re = re.compile(filename_re)
+
+	# List that directory and find entries that match.
+	entries = svnclient.ls(svn_path(svn_dir), recurse=False)
+	results = []
+	for entry in entries:
+		_, filename = entry.name.rsplit('/', 1)
+		match = filename_re.match(filename)
+		if match:
+			x = match.group(1)
+			results.append((path.replace('%', x),
+			                git_name.replace('%', x)))
+
+	return results
+
+def parse_svn_path_map(pathmap):
+	"""Parse a Subversion "path map" dictionary.
+
+	These are used for the BRANCHES and TAGS configuration. Expand
+	the path map into a concrete list of Subversion paths and
+	corresponding Git names.
+
+	Args:
+	  pathmap: The configuration pathmap.
+	Returns:
+	  List of tuples, each tuple containing an expanded Subversion path
+	  and git name.
+	"""
+	results = []
+	for svn_path, git_name in pathmap.items():
+		results.extend(parse_svn_path(svn_path, git_name))
+
+	return results
 
 def open_or_init_repo(path):
 	if not os.path.exists(path):
@@ -615,12 +676,12 @@ gitrepo = open_or_init_repo(config["GIT_REPO"])
 svnclient = pysvn.Client()
 commits = shelve.open("%s/commits.db" % gitrepo.path)
 
-for branch, path in config["BRANCHES"].items():
+for path, branch in parse_svn_path_map(config["BRANCHES"]):
 	print "===== %s" % branch
 	head_id = get_history_for_path(path)
 	gitrepo.refs['refs/heads/%s' % branch] = head_id
 
-for tag, path in config["TAGS"].items():
+for path, tag in parse_svn_path_map(config["TAGS"]):
 	print "===== %s" % tag
 	head_id = get_history_for_path(path)
 	gitrepo.refs['refs/tags/%s' % tag] = head_id
