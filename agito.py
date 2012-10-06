@@ -407,6 +407,23 @@ def get_merge_parents(parents, path, entry):
 
 	return [ mergehead ]
 
+def username_to_author(username):
+	"""Given a Subversion user name, get a Git author string.
+
+	Args:
+	  username: Subversion user, or 'None' for no user.
+	Returns:
+	  Git author string, eg. "Bob Dobbs <bob@example.com>"
+	"""
+	if username in config["AUTHORS"]:
+		name, email = config["AUTHORS"][username]
+	else:
+		name_pattern, email_pattern = config["DEFAULT_AUTHOR"]
+		name = name_pattern.replace('%', username)
+		email = email_pattern.replace('%', username)
+
+	return "%s <%s>" % (name, email)
+
 def create_commit(path, parents, tree_id, entry):
 	"""Create a new Git commit object, and add it to the object store.
 
@@ -418,10 +435,9 @@ def create_commit(path, parents, tree_id, entry):
 	Returns:
 	  New commit object.
 	"""
-	author = 'nobody'
+	username = None
 	if 'author' in entry:
-		author = entry['author']
-	email = "%s <%s@users.sourceforge.net>" % (author, author)
+		username = entry['author']
 
 	message = entry.message.rstrip() + "\n\n" \
 	        + ("Subversion-branch: %s\n" % path) \
@@ -429,7 +445,7 @@ def create_commit(path, parents, tree_id, entry):
 
 	commit = Commit()
 	commit.tree = tree_id
-	commit.author = commit.committer = email
+	commit.author = commit.committer = username_to_author(username)
 	commit.commit_time = commit.author_time = int(entry.date)
 	commit.commit_timezone = commit.author_timezone = 0
 	commit.encoding = "UTF-8"
