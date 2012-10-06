@@ -6,45 +6,9 @@ import os
 import pysvn
 import re
 import shelve
+import sys
 
 MERGEINFO_LINE_RE = re.compile(r'([\w/\-]+):.*-(\d+)')
-
-SVN_DEFAULT_IGNORES = """
-# These are the default patterns globally ignored by Subversion:
-*.o
-*.lo
-*.la
-*.al
-.libs
-*.so
-*.so.[0-9]*
-*.a
-*.pyc
-*.pyo
-*.rej
-*~
-.#*
-.*.swp
-.DS_store
-"""
-
-SVN_ROOT = "file:///home/fraggle/projects/chocolate-doom-repo"
-
-BRANCHES = {
-	"master" : "/trunk/chocolate-doom",
-	"v2-branch" : "/branches/v2-branch",
-	"opl-branch" : "/branches/opl-branch",
-	"raven-branch" : "/branches/raven-branch",
-	"strife-branch" : "/branches/strife-branch",
-	"cndoom" : "/branches/cndoom",
-	"render-limits" : "/branches/render-limits",
-}
-
-TAGS = {
-	"chocolate-doom-0.0.1" : "/tags/chocolate-doom-0.0.1"
-}
-
-FILTER_REVISIONS = [ 391, 1027 ]
 
 class Directory(object):
 	"""Wrapper for Tree objects to make updating easier."""
@@ -179,6 +143,10 @@ def store_commit(path, revision, id):
 	key = str("%s@%s" % (path, revision))
 	commits[key] = id
 
+def svn_path(path):
+	"""Convert a Subversion path to a full URL."""
+	return config["SVN_REPO"] + path
+
 def create_blob_from_svn(path, revision):
 	"""Add a blob for the given Subversion file.
 
@@ -189,8 +157,7 @@ def create_blob_from_svn(path, revision):
 	Returns:
 	  ID (hash) of the blob that was added.
 	"""
-	svnpath = "%s/%s" % (SVN_ROOT, path)
-	data = svnclient.cat(svnpath, svn_revision(revision))
+	data = svnclient.cat(svn_path(path), svn_revision(revision))
 	blob = Blob.from_string(data)
 	gitrepo.object_store.add_object(blob)
 	return blob.id
@@ -205,8 +172,7 @@ def svn_file_type(path, revision):
 	Returns:
 	  Subversion node_kind object.
 	"""
-	svnpath = SVN_ROOT + path
-	info_list = svnclient.info2(svnpath, svn_revision(revision),
+	info_list = svnclient.info2(svn_path(path), svn_revision(revision),
 	                            recurse=False)
 	assert len(info_list) == 1
 	name, info = info_list[0]
@@ -222,7 +188,7 @@ def propget(path, revision, prop):
 	Returns:
 	  String containing the property value or 'None' if not set.
 	"""
-	prop = svnclient.propget(prop, SVN_ROOT + path,
+	prop = svnclient.propget(prop, svn_path(path),
 	                         svn_revision(revision), recurse=False)
 	if len(prop) > 0:
 		return prop.items()[0][1]
@@ -245,7 +211,7 @@ def update_gitignore(treedir, filepath, svnpath, revision):
 	# Include the svn default ignore set in the root .gitignore file.
 
 	if filepath == "":
-		ignore += SVN_DEFAULT_IGNORES
+		ignore += config["SVN_DEFAULT_IGNORES"]
 
 	ignore_file = os.path.join(filepath, ".gitignore")
 
@@ -259,7 +225,7 @@ def update_gitignore(treedir, filepath, svnpath, revision):
 		del treedir[ignore_file]
 
 def recursive_copy(treedir, filepath, changed_path):
-	svnpath = SVN_ROOT + changed_path.copyfrom_path
+	svnpath = svn_path(changed_path.copyfrom_path)
 	files = svnclient.info2(svnpath, changed_path.copyfrom_revision,
 	                        recurse=True)
 
@@ -558,7 +524,7 @@ def construct_history(path, commit_id, log):
 		# If this is a filtered revision, skip to the next revision
 		# without creating a commit.
 
-		if entry.revision.number in FILTER_REVISIONS:
+		if entry.revision.number in config["FILTER_REVISIONS"]:
 			continue
 
 		parents = []
@@ -595,7 +561,7 @@ def get_history_for_path(path, revision=None):
 	# the history. Do an SVN log, and we will turn the log entries
 	# into commits.
 
-	log = svnclient.log(SVN_ROOT + path,
+	log = svnclient.log(svn_path(path),
 	                    discover_changed_paths=True,
 	                    peg_revision=svn_revision(revision),
 	                    revision_start=svn_revision(revision),
@@ -625,6 +591,14 @@ def get_history_for_path(path, revision=None):
 
 	return construct_history(path, commit_id, log)
 
+def parse_config(filename):
+	with open(filename) as f:
+		data = f.read()
+		compiled = compile(data, filename, "exec")
+		result = {}
+		eval(compiled, result)
+		return result
+
 def open_or_init_repo(path):
 	if not os.path.exists(path):
 		os.mkdir(path)
@@ -632,16 +606,21 @@ def open_or_init_repo(path):
 	else:
 		return Repo(path)
 
-gitrepo = open_or_init_repo("gitrepo")
+if len(sys.argv) != 2:
+	print "Usage: %s <config>" % sys.argv[0]
+	sys.exit(0)
+
+config = parse_config(sys.argv[1])
+gitrepo = open_or_init_repo(config["GIT_REPO"])
 svnclient = pysvn.Client()
 commits = shelve.open("%s/commits.db" % gitrepo.path)
 
-for branch, path in BRANCHES.items():
+for branch, path in config["BRANCHES"].items():
 	print "===== %s" % branch
 	head_id = get_history_for_path(path)
 	gitrepo.refs['refs/heads/%s' % branch] = head_id
 
-for tag, path in TAGS.items():
+for tag, path in config["TAGS"].items():
 	print "===== %s" % tag
 	head_id = get_history_for_path(path)
 	gitrepo.refs['refs/tags/%s' % tag] = head_id
