@@ -1,7 +1,7 @@
+#!/usr/bin/env python
 
 from dulwich.repo import Repo
 from dulwich.objects import Blob, Commit, Tree
-import git
 import os
 import pysvn
 import re
