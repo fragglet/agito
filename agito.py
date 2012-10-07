@@ -10,6 +10,8 @@ import sys
 
 MERGEINFO_LINE_RE = re.compile(r'([\w/\-]+):.*-(\d+)')
 
+merge_callbacks = {}
+
 class Directory(object):
 	"""Wrapper for Tree objects to make updating easier."""
 
@@ -321,6 +323,7 @@ def parse_mergeinfo(mergeinfo):
 	  Dictionary mapping from path name to 'latest merge' revision
 	  number.
 	"""
+	mergeinfo = mergeinfo or ""
 	result = {}
 	for line in mergeinfo.split("\n"):
 		match = MERGEINFO_LINE_RE.match(line)
@@ -363,7 +366,50 @@ def log_entry_get_path(entry, path):
 	else:
 		return None
 
-def get_merge_parents(parents, path, entry):
+def mergeinfo_callback(path, entry, change):
+	"""Find merge parents when mergeinfo is changed.
+
+	This is a callback invoked when the svn:mergeinfo property is
+	changed.
+
+	Args:
+	  path: Location of the branch within the repository.
+	  entry: The Subversion log entry structure.
+	  change: Tuple containing svn:mergeinfo value before and after
+	      change.
+	Returns:
+	  Tuple containing Subversion path and revision number of merged
+	  branch, or None for no merge.
+	"""
+	before, after = change
+	diff = diff_mergeinfo(parse_mergeinfo(before), parse_mergeinfo(after))
+
+	# No change?
+
+	if len(diff) == 0:
+		return None
+
+	# There has been some change to the mergeinfo property, so we can
+	# assume a merge has been performed. But a merge from path A might
+	# introduce a merge from path B as well. So how do we know which
+	# is the branch we've actually merged from? Well, we can assume that
+	# the merge revision number for path A will be higher than path B -
+	# the reverse can never be true.
+
+	merged_branch = max(diff, key=lambda d: d[2])
+
+	return (merged_branch[0], merged_branch[2])
+
+def register_merge_callback(propname, callback):
+	"""Add a callback to watch changes to the given Subversion property.
+
+	Args:
+	  propname: Name of the Subversion property.
+	  callback: Callback to invoke to find merged branches.
+	"""
+	merge_callbacks["svn:mergeinfo"] = callback
+
+def get_merge_parents(path, entry):
 	"""Find the 'merge parents' of the given Subversion log entry.
 
 	If the root of the branch path has been modified, the svn:mergeinfo
@@ -375,37 +421,40 @@ def get_merge_parents(parents, path, entry):
 	if changed_path is None or changed_path.action != 'M':
 		return []
 
-	# Read the value of the mergeinfo property before and after this
-	# revision.
-	before = propget(path, entry.revision.number-1, 'svn:mergeinfo') or ""
-	after = propget(path, entry.revision.number, 'svn:mergeinfo') or ""
+	parents = set()
 
-	diff = diff_mergeinfo(parse_mergeinfo(before), parse_mergeinfo(after))
+	# Read the value of the properties before and after this revision.
 
-	# No change?
+	for name, callback in merge_callbacks.items():
+		before = propget(path, entry.revision.number-1, name)
+		after = propget(path, entry.revision.number, name)
 
-	if len(diff) == 0:
-		return []
+		if before == after:
+			continue
 
-	# There has been some change to the mergeinfo property, so we can
-	# assume a merge has been performed. But a merge from path A might
-	# introduce a merge from path B as well. So how do we know which
-	# is the branch we've actually merged from? Well, we can assume that
-	# the merge revision number for path A will be higher than path B -
-	# the reverse can never be true.
+		parent = callback(path, entry, (before, after))
+		if parent is not None:
+			parents.add(parent)
 
-	merged_branch = max(diff, key=lambda d: d[2])
+	# Convert all parents to merge heads.
 
-	print "Merge from %s@%s..." % (merged_branch[0], merged_branch[2])
-	print
+	parent_commits = []
 
-	mergehead = get_history_for_path(merged_branch[0], merged_branch[2])
+	for parent_path, revision in parents:
+		print "Merge from %s@%s..." % (parent_path, revision)
+		print
 
-	print "Head of merged branch: %s" % mergehead
-	print "Continuing %s@%s..." % (path, entry.revision.number)
-	print
+		mergehead = get_history_for_path(parent_path, revision)
 
-	return [ mergehead ]
+		print "Head of merged branch: %s" % mergehead
+
+		parent_commits.append(mergehead)
+
+	if len(parent_commits) > 0:
+		print "Continuing %s@%s..." % (path, entry.revision.number)
+		print
+
+	return parent_commits
 
 def username_to_author(username):
 	"""Given a Subversion user name, get a Git author string.
@@ -546,7 +595,7 @@ def construct_history(path, commit_id, log):
 		parents = []
 		if commit_id is not None:
 			parents.append(commit_id)
-			parents += get_merge_parents(parents, path, entry)
+			parents += get_merge_parents(path, entry)
 
 		newcommit = create_commit(path, parents, tree_id, entry)
 		store_commit(path, entry.revision.number, newcommit.id)
@@ -686,6 +735,8 @@ def open_or_init_repo(path):
 if len(sys.argv) != 2:
 	print "Usage: %s <config>" % sys.argv[0]
 	sys.exit(0)
+
+register_merge_callback('svn:mergeinfo', mergeinfo_callback)
 
 config = parse_config(sys.argv[1])
 gitrepo = open_or_init_repo(config["GIT_REPO"])
