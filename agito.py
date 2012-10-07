@@ -407,7 +407,7 @@ def register_merge_callback(propname, callback):
 	  propname: Name of the Subversion property.
 	  callback: Callback to invoke to find merged branches.
 	"""
-	merge_callbacks["svn:mergeinfo"] = callback
+	merge_callbacks[propname] = callback
 
 def get_merge_parents(path, entry):
 	"""Find the 'merge parents' of the given Subversion log entry.
@@ -667,7 +667,7 @@ def parse_config(filename):
 	with open(filename) as f:
 		data = f.read()
 		compiled = compile(data, filename, "exec")
-		result = {}
+		result = { 'agito': sys.modules[__name__] }
 		eval(compiled, result)
 		return result
 
@@ -742,6 +742,12 @@ config = parse_config(sys.argv[1])
 gitrepo = open_or_init_repo(config["GIT_REPO"])
 svnclient = pysvn.Client()
 commits = shelve.open("%s/commits.db" % gitrepo.path)
+
+# A custom initialization hook can be set in the configuration file,
+# to set merge property callbacks.
+
+if "init" in config:
+	config["init"]()
 
 for path, branch in parse_svn_path_map(config["BRANCHES"]):
 	print "===== %s" % branch
