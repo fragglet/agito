@@ -421,7 +421,7 @@ def get_merge_parents(path, entry):
 	if changed_path is None or changed_path.action != 'M':
 		return []
 
-	parents = set()
+	parents = {}
 
 	# Read the value of the properties before and after this revision.
 
@@ -432,15 +432,21 @@ def get_merge_parents(path, entry):
 		if before == after:
 			continue
 
+		# Invoke the callback. If multiple callbacks suggest the
+		# same merge, the revision numbers might be slightly
+		# different, so use the highest numbered.
+
 		parent = callback(path, entry, (before, after))
 		if parent is not None:
-			parents.add(parent)
+			parent_path, parent_rev = parent
+			if parent_rev > parents.get(parent_path, 0):
+				parents[parent_path] = parent_rev
 
 	# Convert all parents to merge heads.
 
 	parent_commits = []
 
-	for parent_path, revision in parents:
+	for parent_path, revision in parents.items():
 		print "Merge from %s@%s..." % (parent_path, revision)
 		print
 
