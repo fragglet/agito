@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 from dulwich.repo import Repo
-from dulwich.objects import Blob, Commit, Tree
+from dulwich.objects import Blob, Commit, Tag, Tree
 import os
 import pysvn
 import re
@@ -742,6 +742,41 @@ def get_history_for_path(path, revision=None):
 
 	return construct_history(path, commit_id, log)
 
+def create_tag_object(name, head):
+	"""Create an annotated tag object from the given history.
+
+	This rewrites a 'tag creation' history so that the head is a tag
+	instead of a commit. This relies on the fact that in Subversion,
+	tags are created using a 'svn cp' copy.
+
+	Args:
+	  name: Name of the tag.
+	  head: Object ID of the head commit of a chain to be tagged.
+	Returns:
+	  The object ID of an annotated tag object, or the value of 'head'
+	  if the tag could not be created.
+	"""
+	head_commit = gitrepo.get_object(head)
+
+	# The tree of the commit should exactly match the tree of its parent.
+	# If not, then is not a pure 'tagging' commit.
+	if len(head_commit.parents) != 1:
+		return head
+	head_hat_commit = gitrepo.get_object(head_commit.parents[0])
+	if head_commit.tree != head_hat_commit.tree:
+		return head
+
+	tag = Tag()
+	tag.name = name
+	tag.message = head_commit.message
+	tag.tag_time = head_commit.commit_time
+	tag.tag_timezone = head_commit.commit_timezone
+	tag.object = (Commit, head_hat_commit.id)
+	tag.tagger = head_commit.committer
+	gitrepo.object_store.add_object(tag)
+
+	return tag.id
+
 def parse_config(filename):
 	"""Parse configuration file.
 
@@ -843,5 +878,7 @@ for path, branch in parse_svn_path_map(config["BRANCHES"]):
 for path, tag in parse_svn_path_map(config["TAGS"]):
 	print "===== %s" % tag
 	head_id = get_history_for_path(path)
+	if config["CREATE_TAG_OBJECTS"]:
+		head_id = create_tag_object(tag, head_id)
 	gitrepo.refs['refs/tags/%s' % tag] = head_id
 
