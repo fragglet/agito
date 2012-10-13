@@ -9,6 +9,12 @@ import shelve
 import sys
 
 MERGEINFO_LINE_RE = re.compile(r'([\w/\-]+):.*-(\d+)')
+WORD_MATCH = re.compile(r'(\s*)(\S+)')
+BULLET_POINT_RE = re.compile(r'(\s*[\*\+]\s*)')
+
+# Maximum characters per line in a Git commit message:
+
+GIT_MAX_LINE_LEN = 72
 
 merge_callbacks = {}
 
@@ -479,6 +485,79 @@ def username_to_author(username):
 
 	return "%s <%s>" % (name, email)
 
+def reflow_line(line):
+	"""Reflow the text of a single line onto multiple short lines.
+
+	Args:
+	  line: String containing line to reflow.
+	Returns:
+	  String containing reflowed line.
+	"""
+	match = BULLET_POINT_RE.match(line)
+	if match:
+		current_line = match.group(1)
+		indent_len = len(current_line)
+		offset = indent_len
+	else:
+		current_line = ""
+		indent_len = 0
+		offset = 0
+
+	result = []
+
+	while True:
+		match = WORD_MATCH.match(line, offset)
+		if not match:
+			break
+
+		space = match.group(1)
+		word = match.group(2)
+		if len(current_line + space + word) > GIT_MAX_LINE_LEN:
+			result.append(current_line)
+			current_line = " " * indent_len
+		else:
+			current_line += space
+
+		current_line += word
+		offset = match.end(0)
+
+	result.append(current_line)
+	return "\n".join(result)
+
+def reflow_text(path, entry, message):
+	"""Re-arrange the text of a commit message to a maximum line length.
+
+	This ensures that lines of a commit message do not exceed the Git
+	standard maximum of 72 columns.
+
+	Args:
+	  path: Path of the branch within Subversion.
+	  entry: Log entry with the details of this commit.
+	  message: The commit message text.
+	Returns:
+	  Reflowed commit message text.
+	"""
+	result = []
+
+	for line in message.split("\n"):
+		result.append(reflow_line(line))
+
+	return "\n".join(result)
+
+def append_branch_info(path, entry, message):
+	"""Appends Subversion branch info to Git commit messages.
+
+	Args:
+	  path: Path of the branch within Subversion.
+	  entry: Log entry with the details of this commit.
+	  message: The commit message text.
+	Returns:
+	  Altered commit message text with branch info appended.
+	"""
+	return message.rstrip() + "\n\n" \
+	     + ("Subversion-branch: %s\n" % path) \
+	     + ("Subversion-revision: %i\n" % entry.revision.number)
+
 def create_commit(path, parents, tree_id, entry):
 	"""Create a new Git commit object, and add it to the object store.
 
@@ -494,9 +573,10 @@ def create_commit(path, parents, tree_id, entry):
 	if 'author' in entry:
 		username = entry['author']
 
-	message = entry.message.rstrip() + "\n\n" \
-	        + ("Subversion-branch: %s\n" % path) \
-	        + ("Subversion-revision: %i\n" % entry.revision.number)
+	# Convert Subversion commit message into Git commit message:
+	message = entry.message
+	for message_filter in config['COMMIT_MESSAGE_FILTERS']:
+		message = message_filter(path, entry, message)
 
 	commit = Commit()
 	commit.tree = tree_id
