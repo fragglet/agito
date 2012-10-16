@@ -38,8 +38,6 @@ BULLET_POINT_RE = re.compile(r'(\s*[\*\+]\s*)')
 
 GIT_MAX_LINE_LEN = 72
 
-merge_callbacks = {}
-
 class Directory(object):
 	"""Wrapper for Tree objects to make updating easier."""
 
@@ -436,15 +434,6 @@ def mergeinfo_callback(path, entry, change):
 	merged_branch = max(diff, key=lambda d: d[2])
 
 	return (merged_branch[0], merged_branch[2])
-
-def register_merge_callback(propname, callback):
-	"""Add a callback to watch changes to the given Subversion property.
-
-	Args:
-	  propname: Name of the Subversion property.
-	  callback: Callback to invoke to find merged branches.
-	"""
-	merge_callbacks[propname] = callback
 
 def get_merge_parents(path, entry):
 	"""Find the 'merge parents' of the given Subversion log entry.
@@ -894,18 +883,15 @@ if len(sys.argv) != 2:
 	print "Usage: %s <config>" % sys.argv[0]
 	sys.exit(0)
 
-register_merge_callback('svn:mergeinfo', mergeinfo_callback)
-
 config = parse_config(sys.argv[1])
+
+# Set up merge_callbacks and add svn:mergeinfo handler.
+merge_callbacks = config['MERGE_CALLBACKS'].copy()
+merge_callbacks['svn:mergeinfo'] = mergeinfo_callback
+
 gitrepo = open_or_init_repo(config["GIT_REPO"])
 svnclient = pysvn.Client()
 commits = shelve.open("%s/commits.db" % gitrepo.path)
-
-# A custom initialization hook can be set in the configuration file,
-# to set merge property callbacks.
-
-if "init" in config:
-	config["init"]()
 
 for path, branch in parse_svn_path_map(config["BRANCHES"]):
 	print "===== %s" % branch
