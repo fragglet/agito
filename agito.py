@@ -84,6 +84,15 @@ class Directory(object):
 		else:
 			return components[0] in self.tree
 
+	def __getitem__(self, path):
+		components = path.split("/", 1)
+
+		if len(components) == 2:
+			subdir = self.__get_subdir(components[0])
+			return subdir[components[1]]
+		else:
+			return self.tree[path]
+
 	def __setitem__(self, path, value):
 		components = path.split("/", 1)
 
@@ -692,6 +701,12 @@ def construct_history(path, commit_id, log):
 	for entry in reversed(log):
 
 		mutate_tree_from_log(treedir, path, entry)
+
+		# Allow trees to be rewritten by a callback before saving.
+
+		if "FILTER_BRANCH_CALLBACK" in config:
+			config["FILTER_BRANCH_CALLBACK"](path, entry, treedir)
+
 		tree_id = treedir.save()
 
 		# If this is a filtered revision, skip to the next revision
