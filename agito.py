@@ -248,7 +248,7 @@ def update_gitignore(treedir, filepath, svnpath, revision):
 	# Include the svn default ignore set in the root .gitignore file.
 
 	if filepath == "":
-		ignore += config["SVN_DEFAULT_IGNORES"]
+		ignore += config.get("SVN_DEFAULT_IGNORES", "")
 
 	ignore_file = os.path.join(filepath, ".gitignore")
 
@@ -496,10 +496,14 @@ def username_to_author(username):
 	Returns:
 	  Git author string, eg. "Bob Dobbs <bob@example.com>"
 	"""
-	if username in config["AUTHORS"]:
-		name, email = config["AUTHORS"][username]
+	authors = config.get("AUTHORS", {})
+	default_author = config.get("DEFAULT_AUTHOR", ("%", "%@localhost"))
+
+	if username in authors:
+		name, email = authors[username]
 	else:
-		name_pattern, email_pattern = config["DEFAULT_AUTHOR"]
+		username = username or "nobody"
+		name_pattern, email_pattern = default_author
 		name = name_pattern.replace('%', username)
 		email = email_pattern.replace('%', username)
 
@@ -595,7 +599,7 @@ def create_commit(path, parents, tree_id, entry):
 
 	# Convert Subversion commit message into Git commit message:
 	message = entry.message
-	for message_filter in config['COMMIT_MESSAGE_FILTERS']:
+	for message_filter in config.get('COMMIT_MESSAGE_FILTERS', []):
 		message = message_filter(path, entry, message)
 
 	commit = Commit()
@@ -701,7 +705,7 @@ def construct_history(path, commit_id, log):
 		# If this is a filtered revision, skip to the next revision
 		# without creating a commit.
 
-		if entry.revision.number in config["FILTER_REVISIONS"]:
+		if entry.revision.number in config.get("FILTER_REVISIONS", []):
 			continue
 
 		parents = []
@@ -883,25 +887,40 @@ if len(sys.argv) != 2:
 	print "Usage: %s <config>" % sys.argv[0]
 	sys.exit(0)
 
+# Read configuration file and make essential sanity check.
+
 config = parse_config(sys.argv[1])
+assert ("SVN_REPO" in config), \
+       "Must provide path to Subversion repository to convert"
+assert ("GIT_REPO" in config), \
+       "Must provide path to output Git repository"
 
 # Set up merge_callbacks and add svn:mergeinfo handler.
-merge_callbacks = config['MERGE_CALLBACKS'].copy()
+merge_callbacks = config.get('MERGE_CALLBACKS', {}).copy()
 merge_callbacks['svn:mergeinfo'] = mergeinfo_callback
 
 gitrepo = open_or_init_repo(config["GIT_REPO"])
 svnclient = pysvn.Client()
 commits = shelve.open("%s/commits.db" % gitrepo.path)
 
-for path, branch in parse_svn_path_map(config["BRANCHES"]):
+# Create branches. If the branches have not been specified in the
+# configuration file, fall back to a single branch that captures the
+# history of the entire repository.
+
+if "BRANCHES" in config:
+	branches = config["BRANCHES"]
+else:
+	branches = { "/" : "master" }
+
+for path, branch in parse_svn_path_map(branches):
 	print "===== %s" % branch
 	head_id = get_history_for_path(path)
 	gitrepo.refs['refs/heads/%s' % branch] = head_id
 
-for path, tag in parse_svn_path_map(config["TAGS"]):
+for path, tag in parse_svn_path_map(config.get("TAGS", {})):
 	print "===== %s" % tag
 	head_id = get_history_for_path(path)
-	if config["CREATE_TAG_OBJECTS"]:
+	if config.get("CREATE_TAG_OBJECTS", True):
 		head_id = create_tag_object(tag, head_id)
 	gitrepo.refs['refs/tags/%s' % tag] = head_id
 
