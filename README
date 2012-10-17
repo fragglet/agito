@@ -8,3 +8,9 @@ scenarios.  Agito was created to convert the history of Chocolate
 Doom, which exhibits some of these corner cases. For more information
 on how Agito is different to git-svn, see DESIGN.
 
+To use Agito, you must write a configuration file. The easiest way to
+do this is to copy the file 'example.cfg' and modify it as
+appropriate. Most of the default settings are fairly sensible. While
+Agito has several advanced features that can be used, these can be
+simply ignored if they aren't needed.
+
