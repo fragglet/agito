@@ -2,8 +2,9 @@
 Agito is (yet another) Subversion to Git conversion script.
 
 It is designed to do a better job of translating history than git-svn,
-which has some subtleties in the way it works that cause it to construct
-branch histories that are suboptimal in certain corner case scenarios.
-Agito was created to convert the history of Chocolate Doom, which exhibits
-some of these corner cases.
+which has some subtleties in the way it works that cause it to
+construct branch histories that are suboptimal in certain corner case
+scenarios.  Agito was created to convert the history of Chocolate
+Doom, which exhibits some of these corner cases. For more information
+on how Agito is different to git-svn, see DESIGN.
 
