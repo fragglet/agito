@@ -494,7 +494,8 @@ def username_to_author(username):
 	Args:
 	  username: Subversion user, or 'None' for no user.
 	Returns:
-	  Git author string, eg. "Bob Dobbs <bob@example.com>"
+	  Tuple containing author name and email address, eg.
+	  ('Bob Dobbs', 'bob@example.com')
 	"""
 	authors = config.get("AUTHORS", {})
 	default_author = config.get("DEFAULT_AUTHOR", ("%", "%@localhost"))
@@ -507,7 +508,7 @@ def username_to_author(username):
 		name = name_pattern.replace('%', username)
 		email = email_pattern.replace('%', username)
 
-	return "%s <%s>" % (name, email)
+	return (name, email)
 
 def reflow_line(line):
 	"""Reflow the text of a single line onto multiple short lines.
@@ -582,35 +583,70 @@ def append_branch_info(path, entry, message):
 	     + ("Subversion-branch: %s\n" % path) \
 	     + ("Subversion-revision: %i\n" % entry.revision.number)
 
-def create_commit(path, parents, tree_id, entry):
-	"""Create a new Git commit object, and add it to the object store.
+def commit_metadata_from_entry(path, entry):
+	"""Create a metadata dictionary for the given Subversion commit.
+
+	This encapsulates the metadata to be used to construct the
+	equivalent Git commit, and can be rewritten, as with
+	'git filter-branch'
 
 	Args:
 	  path: Path to the Subversion branch.
-	  parents: The parents of this commit.
-	  tree: The tree of files to use for this commit.
-	  entry: Subversion log entry to use for the details of this commit.
+	  entry: The Subversion log entry for this commit.
 	Returns:
-	  New commit object.
+	  Dictionary mapping from names to values; the names match those
+	  used by 'git filter-branch'.
 	"""
+	# Get author name and email address:
 	username = None
 	if 'author' in entry:
 		username = entry['author']
+
+	name, email = username_to_author(username)
 
 	# Convert Subversion commit message into Git commit message:
 	message = entry.message
 	for message_filter in config.get('COMMIT_MESSAGE_FILTERS', []):
 		message = message_filter(path, entry, message)
 
+	return {
+		"MESSAGE": message,
+		"GIT_AUTHOR_NAME": name,
+		"GIT_AUTHOR_EMAIL": email,
+		"GIT_AUTHOR_DATE": int(entry.date),
+		"GIT_COMMITTER_NAME": name,
+		"GIT_COMMITTER_EMAIL": email,
+		"GIT_COMMITTER_DATE": int(entry.date),
+	}
+
+def create_commit(metadata, parents, tree_id):
+	"""Create a new Git commit object, and add it to the object store.
+
+	Args:
+	  metadata: Dictionary containing metadata to construct the commit,
+	      including commit message and author data.
+	  parents: The parents of this commit.
+	  tree: The tree of files to use for this commit.
+	Returns:
+	  New commit object.
+	"""
 	commit = Commit()
 	commit.tree = tree_id
-	commit.author = commit.committer = username_to_author(username)
-	commit.commit_time = commit.author_time = int(entry.date)
-	commit.commit_timezone = commit.author_timezone = 0
+	commit.author = "%s <%s>" % (metadata["GIT_AUTHOR_NAME"],
+	                             metadata["GIT_AUTHOR_EMAIL"])
+	commit.author_time = metadata["GIT_AUTHOR_DATE"]
+	commit.author_timezone = 0
+
+	commit.committer = "%s <%s>" % (metadata["GIT_COMMITTER_NAME"],
+	                                metadata["GIT_COMMITTER_EMAIL"])
+	commit.commit_time = metadata["GIT_COMMITTER_DATE"]
+	commit.commit_timezone = 0
+
 	commit.encoding = "UTF-8"
-	commit.message = message
+	commit.message = metadata["MESSAGE"]
 	commit.parents = parents
 	gitrepo.object_store.add_object(commit)
+
 	return commit
 
 def follow_parent_branch(path, entry):
@@ -695,25 +731,31 @@ def construct_history(path, commit_id, log):
 
 		mutate_tree_from_log(treedir, path, entry)
 
-		# Allow trees to be rewritten by a callback before saving.
-
-		if "FILTER_BRANCH_CALLBACK" in config:
-			config["FILTER_BRANCH_CALLBACK"](path, entry, treedir)
-
-		tree_id = treedir.save()
-
 		# If this is a filtered revision, skip to the next revision
 		# without creating a commit.
 
 		if entry.revision.number in config.get("FILTER_REVISIONS", []):
 			continue
 
+		# Allow trees and commit metadata to be rewritten by a
+		# callback before saving, like 'git filter-branch':
+
+		metadata = commit_metadata_from_entry(path, entry)
+
+		if "FILTER_BRANCH_CALLBACK" in config:
+			config["FILTER_BRANCH_CALLBACK"](path, entry,
+			                                 metadata, treedir)
+
+		tree_id = treedir.save()
+
+		# Identify parents of this commit:
+
 		parents = []
 		if commit_id is not None:
 			parents.append(commit_id)
 			parents += get_merge_parents(path, entry)
 
-		newcommit = create_commit(path, parents, tree_id, entry)
+		newcommit = create_commit(metadata, parents, tree_id)
 		store_commit(path, entry.revision.number, newcommit.id)
 		print "\tcommit %s" % newcommit.id
 		print
