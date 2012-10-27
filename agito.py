@@ -264,14 +264,21 @@ def update_gitignore(treedir, filepath, svnpath, revision):
 	elif ignore_file in treedir:
 		del treedir[ignore_file]
 
+def path_within_path(needle, haystack):
+	"""Returns True if 'needle' is within 'haystack'."""
+
+	haystack = haystack.rstrip('/')
+
+	return (haystack == needle
+	     or needle.startswith(haystack + '/'))
+
 def recursive_copy(treedir, filepath, changed_path):
 	svnpath = svn_path(changed_path.copyfrom_path)
 	files = svnclient.info2(svnpath, changed_path.copyfrom_revision,
 	                        recurse=True)
 
 	for _, info in files:
-		assert (info.URL == svnpath
-		     or info.URL.startswith(svnpath + '/'))
+		assert path_within_path(info.URL, svnpath)
 		subpath = info.URL[len(svnpath) + 1:]
 
 		if subpath == '':
@@ -335,14 +342,11 @@ def mutate_tree_from_log(treedir, path, log):
 	print "% 8i:" % log.revision.number
 
 	for changed_path in changed_paths:
-		if not changed_path.path.startswith(path + '/'):
+		if not path_within_path(changed_path.path, path):
 			continue
 
 		filepath = changed_path.path[len(path) + 1:]
 		action = changed_path.action
-
-		#if filepath == "":
-		#	continue
 
 		print "\t%s %s" % (action, filepath)
 
@@ -703,8 +707,8 @@ def follow_parent_branch(path, entry):
 		if path.startswith(changed_path.path + '/'):
 			subdir = os.path.relpath(path, changed_path.path)
 			break
-
-	assert changed_path is not None
+	else:
+		assert False, "Source of copied parent branch not found."
 
 	# Branch copied from a parent branch? Follow the history.
 
