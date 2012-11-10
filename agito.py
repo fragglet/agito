@@ -310,7 +310,7 @@ def process_add_modify(treedir, filepath, log, changed_path):
 		add_to_tree_from_svn(treedir, filepath, changed_path.path,
 		                     revision)
 	elif filetype == pysvn.node_kind.dir:
-		if changed_path.action == 'A' and filepath != '':
+		if changed_path.action in ('A', 'R') and filepath != '':
 			treedir.mkdir(filepath)
 			if changed_path.copyfrom_path:
 				recursive_copy(treedir, filepath, changed_path)
