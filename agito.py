@@ -587,7 +587,7 @@ def append_branch_info(path, entry, message):
 	  Altered commit message text with branch info appended.
 	"""
 	return message.rstrip() + "\n\n" \
-	     + ("Subversion-branch: %s\n" % path) \
+	     + ("Subversion-branch: %s\n" % str(path)) \
 	     + ("Subversion-revision: %i\n" % entry.revision.number)
 
 def utc_time_string(seconds):
