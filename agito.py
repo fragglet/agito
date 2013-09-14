@@ -24,12 +24,15 @@
 
 from dulwich.repo import Repo
 from dulwich.objects import Blob, Commit, Tag, Tree
+
 import os
 import pysvn
 import re
 import shelve
 import sys
 import time
+import urllib
+from urlparse import urlparse, urlunparse
 
 DATE_TIME_FORMAT = "%Y-%m-%d %H:%M:%S"
 
@@ -185,7 +188,21 @@ def store_commit(path, revision, id):
 
 def svn_path(path):
 	"""Convert a Subversion path to a full URL."""
-	return config["SVN_REPO"] + path
+
+	# First, convert path to be a relative path (from the root of
+	# the repository). eg. "/x/y/z" -> "x/y/z"
+
+	while len(path) > 0 and path[0] == '/':
+		path = path[1:]
+
+	# Parse the repository's URL, join the paths and then reassemble
+	# back into a full URL.
+
+	repo_url = urlparse(config["SVN_REPO"])
+	full_path = os.path.join(urllib.unquote(repo_url.path), path)
+
+	return urlunparse((repo_url.scheme, repo_url.netloc,
+	                   urllib.quote(full_path), '', '', ''))
 
 def create_blob_from_svn(path, revision):
 	"""Add a blob for the given Subversion file.
