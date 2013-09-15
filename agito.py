@@ -969,6 +969,47 @@ def open_or_init_repo(path):
 	else:
 		return Repo(path)
 
+def check_svn_repo():
+	# Check that the Subversion repository can be accessed and is a valid
+	# URL. The URL should point to the root of the repository.
+
+	try:
+		info = svnclient.info2(config["SVN_REPO"], recurse=False)
+		if len(info) == 0:
+			raise Exception("Can't find info about repository")
+	except Exception as e:
+		template = """
+Failed to open Subversion repository at the following location:
+
+  %s
+
+The SVN_REPO parameter in your configuration file may be incorrect.
+The error that occurred was:
+
+%s
+"""
+		print >> sys.stderr, template % (config["SVN_REPO"], e)
+		sys.exit(1)
+
+	_, info_obj = info[0]
+
+	if info_obj.URL != info_obj.repos_root_URL:
+		template = """
+Tried to open a Subversion repository at the following location:
+
+  %s
+
+But this is not the root of the repository. You should probably reconfigure
+the SVN_REPO parameter in your configuration file to point to this location
+instead:
+
+  %s
+"""
+		print >> sys.stderr, template % \
+		    (config["SVN_REPO"], info_obj.repos_root_URL)
+		sys.exit(1)
+
+
 if len(sys.argv) != 2:
 	print "Usage: %s <config>" % sys.argv[0]
 	sys.exit(0)
@@ -987,6 +1028,7 @@ merge_callbacks['svn:mergeinfo'] = mergeinfo_callback
 
 gitrepo = open_or_init_repo(config["GIT_REPO"])
 svnclient = pysvn.Client()
+check_svn_repo()
 commits = shelve.open("%s/commits.db" % gitrepo.path)
 
 # Create branches. If the branches have not been specified in the
