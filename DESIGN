@@ -1,7 +1,7 @@
 This describes the design of Agito, and how it differs to other
 Subversion-Git conversion programs.
 
-Subversions has, on the face of it, what seems like a fairly simple
+Subversion has, on the face of it, what seems like a fairly simple
 scheme, where branches, tags and other are united within a single tree
 structure, with a single incrementing revision counter. It seems like
 writing a tool to convert a Subversion repository to a Git repository
