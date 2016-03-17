@@ -607,6 +607,37 @@ def append_branch_info(path, entry, message):
 	     + ("Subversion-branch: %s\n" % str(path)) \
 	     + ("Subversion-revision: %i\n" % entry.revision.number)
 
+def rewrite_commit_refs(path, entry, message):
+	"""Rewrites Subversion commit references to Git commits.
+
+	Supports `r123` and ``[123]`` style commits
+
+	Args:
+	  path: Path of the branch within Subversion.
+	  entry: Log entry with the details of this commit.
+	  message: The commit message text.
+	Returns:
+	  Altered commit message text with commit references replaced.
+	"""
+	def substitute(m):
+		ref = m.group(1)
+		commit = get_commit(path, ref)
+
+		if commit is None:
+			print("No commit matches %r" % ref)
+			return m.group(0) # no replacement
+		elif commit:
+			# truncate hash to 8 chars
+			return commit[0:8]
+		else:
+			print("Cannot resolve %r" % ref)
+			return m.group(0) # no replacement
+
+	for regexp in (r"r([0-9.]+)", r"\[([0-9]+)\]"):
+		message = re.compile(regexp).sub(lambda m: substitute(m), message)
+
+	return message
+
 def utc_time_string(seconds):
 	"""Convert epoch seconds to a time string."""
 	return time.strftime(DATE_TIME_FORMAT, time.gmtime(seconds))
