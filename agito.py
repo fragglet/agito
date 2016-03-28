@@ -590,7 +590,7 @@ def reflow_text(path, entry, message):
 	lines = message.split("\n")
 
 	# reflow of first line may be not wanted
-	if not REFLOW_FIRST_LINE:
+	if not reflow_first_line:
 		result.append(lines.pop(0))
 
 	for line in lines:
@@ -1031,9 +1031,8 @@ assert ("GIT_REPO" in config), \
 merge_callbacks = config.get('MERGE_CALLBACKS', {}).copy()
 merge_callbacks['svn:mergeinfo'] = mergeinfo_callback
 
-merge_callbacks = config.get('MERGE_CALLBACKS', {}).copy()
 # Whether to reflow first line in reflow_text
-REFLOW_FIRST_LINE = config.get('REFLOW_FIRST_LINE', True)
+reflow_first_line = config.get('REFLOW_FIRST_LINE', True)
 
 gitrepo = open_or_init_repo(config["GIT_REPO"])
 svnclient = pysvn.Client()
