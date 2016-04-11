@@ -39,8 +39,8 @@ DATE_TIME_FORMAT = "%Y-%m-%d %H:%M:%S"
 MERGEINFO_LINE_RE = re.compile(r'([\w/\-]+):.*-(\d+)')
 WORD_MATCH = re.compile(r'(\s*)(\S+)')
 BULLET_POINT_RE = re.compile(r'(\s*[\*\+]\s*)')
-COMMIT_REF_REs = (
-	re.compile(r"r([0-9.]+)"),
+COMMIT_REF_RES = (
+	re.compile(r"r([0-9]+)"),
 	re.compile(r"\[([0-9]+)\]"),
 )
 
@@ -635,7 +635,7 @@ def rewrite_commit_refs(path, entry, message):
 		# truncate hash to 8 chars
 		return commit[0:8]
 
-	for r in COMMIT_REF_REs:
+	for r in COMMIT_REF_RES:
 		message = r.sub(substitute, message)
 
 	return message
