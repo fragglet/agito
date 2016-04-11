@@ -39,6 +39,10 @@ DATE_TIME_FORMAT = "%Y-%m-%d %H:%M:%S"
 MERGEINFO_LINE_RE = re.compile(r'([\w/\-]+):.*-(\d+)')
 WORD_MATCH = re.compile(r'(\s*)(\S+)')
 BULLET_POINT_RE = re.compile(r'(\s*[\*\+]\s*)')
+COMMIT_REF_RES = (
+	re.compile(r"r([0-9]+)"),
+	re.compile(r"\[([0-9]+)\]"),
+)
 
 # Maximum characters per line in a Git commit message:
 
@@ -611,6 +615,35 @@ def append_branch_info(path, entry, message):
 	return message.rstrip() + "\n\n" \
 	     + ("Subversion-branch: %s\n" % str(path)) \
 	     + ("Subversion-revision: %i\n" % entry.revision.number)
+
+def rewrite_commit_refs(path, entry, message):
+	"""Rewrites Subversion commit references to Git commits.
+
+	Supports `r123` and ``[123]`` style commits
+
+	Args:
+	  path: Path of the branch within Subversion.
+	  entry: Log entry with the details of this commit.
+	  message: The commit message text.
+	Returns:
+	  Altered commit message text with commit references replaced.
+	"""
+	def substitute(m):
+		ref = m.group(1)
+		commit = get_commit(path, ref)
+
+		if not commit:
+			print("No commit matches %r" % ref)
+			# no replacement
+			return m.group(0)
+
+		# truncate hash to 8 chars
+		return commit[0:8]
+
+	for r in COMMIT_REF_RES:
+		message = r.sub(substitute, message)
+
+	return message
 
 def utc_time_string(seconds):
 	"""Convert epoch seconds to a time string."""
