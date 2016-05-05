@@ -824,9 +824,8 @@ def construct_history(path, commit_id, log):
 
 		metadata = commit_metadata_from_entry(path, entry)
 
-		if "FILTER_BRANCH_CALLBACK" in config:
-			config["FILTER_BRANCH_CALLBACK"](path, entry,
-			                                 metadata, treedir)
+		for filter_branch in config.get('FILTER_BRANCH_CALLBACKS', []):
+			filter_branch(path, entry, metadata, treedir)
 
 		tree_id = treedir.save()
 
